@@ -1,0 +1,107 @@
+import { motion } from 'framer-motion';
+import { Clock, AlertTriangle, User, Stethoscope } from 'lucide-react';
+import type { Appointment } from '../types';
+import { RISK_FACTOR_LABELS, APPOINTMENT_STATUS_LABELS } from '../types';
+import { useAppStore } from '../store';
+import { cn } from '../lib/utils';
+
+interface PatientCardProps {
+  appointment: Appointment;
+}
+
+export default function PatientCard({ appointment }: PatientCardProps) {
+  const { openFloatingWindow } = useAppStore();
+  const { patient, time, treatmentType, status } = appointment;
+
+  const statusColors = {
+    pending: 'bg-slate-100 text-slate-600',
+    'in-progress': 'bg-blue-100 text-blue-600',
+    completed: 'bg-green-100 text-green-600'
+  };
+
+  const riskColors = {
+    hypertension: 'bg-red-100 text-red-600',
+    diabetes: 'bg-orange-100 text-orange-600',
+    pregnancy: 'bg-pink-100 text-pink-600',
+    longTermMedication: 'bg-purple-100 text-purple-600'
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    openFloatingWindow(appointment, {
+      x: Math.min(rect.right + 20, window.innerWidth - 440),
+      y: Math.max(rect.top, 100)
+    });
+  };
+
+  return (
+    <motion.div
+      whileHover={{ scale: 1.02, y: -2 }}
+      whileTap={{ scale: 0.98 }}
+      onClick={handleClick}
+      className={cn(
+        'bg-white rounded-xl p-4 shadow-sm border border-slate-200',
+        'cursor-pointer transition-all duration-200',
+        'hover:shadow-lg hover:border-blue-300',
+        status === 'in-progress' && 'ring-2 ring-blue-400 ring-offset-2'
+      )}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            'w-12 h-12 rounded-full flex items-center justify-center',
+            patient.gender === '男' ? 'bg-blue-50' : 'bg-pink-50'
+          )}>
+            <User className={cn(
+              'w-6 h-6',
+              patient.gender === '男' ? 'text-blue-500' : 'text-pink-500'
+            )} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-800 text-lg">{patient.name}</h3>
+            <p className="text-sm text-slate-500">{patient.gender} · {patient.age}岁</p>
+          </div>
+        </div>
+        <span className={cn(
+          'px-2.5 py-1 rounded-full text-xs font-medium',
+          statusColors[status]
+        )}>
+          {APPOINTMENT_STATUS_LABELS[status]}
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <Clock className="w-4 h-4 text-slate-400" />
+          <span>{time}</span>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <Stethoscope className="w-4 h-4 text-slate-400" />
+          <span>{treatmentType}</span>
+        </div>
+      </div>
+
+      {patient.riskFactors.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-xs font-medium text-amber-600">风险提示</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {patient.riskFactors.map(risk => (
+              <span
+                key={risk}
+                className={cn(
+                  'px-2 py-0.5 rounded text-xs font-medium',
+                  riskColors[risk]
+                )}
+              >
+                {RISK_FACTOR_LABELS[risk]}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
