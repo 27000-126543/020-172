@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Clock, AlertTriangle, User, Stethoscope, History, ChevronRight, ChevronDown, Printer, Save } from 'lucide-react';
+import { Clock, AlertTriangle, User, Stethoscope, History, ChevronRight, ChevronDown, Printer, Save, MessageSquare } from 'lucide-react';
 import type { Appointment } from '../types';
 import { RISK_FACTOR_LABELS, APPOINTMENT_STATUS_LABELS, CONSULTATION_STAGE_LABELS } from '../types';
 import { useAppStore } from '../store';
@@ -13,7 +13,7 @@ interface PatientCardProps {
 
 export default function PatientCard({ appointment }: PatientCardProps) {
   const { openFloatingWindow, setConsultationStage, getPatientReviewHistory } = useAppStore();
-  const { patient, time, treatmentType, status, stage, patientId } = appointment;
+  const { patient, time, treatmentType, status, stage, patientId, handoffNote } = appointment;
   const [showHistory, setShowHistory] = useState(false);
 
   const statusColors = {
@@ -38,7 +38,11 @@ export default function PatientCard({ appointment }: PatientCardProps) {
     });
   };
 
-  const historyList = getPatientReviewHistory(patientId).slice(0, 5);
+  const historyList = getPatientReviewHistory(patientId, appointment).slice(0, 5);
+
+  const getDisplayTime = (h: any) => {
+    return h.isPrinted ? h.printedAt : h.createdAt;
+  };
 
   return (
     <motion.div
@@ -86,6 +90,18 @@ export default function PatientCard({ appointment }: PatientCardProps) {
           <span>{treatmentType}</span>
         </div>
       </div>
+
+      {handoffNote && (
+        <div className="mt-3 p-2.5 bg-amber-50 rounded-lg border border-amber-200 no-card-click">
+          <div className="flex items-start gap-2">
+            <MessageSquare className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-medium text-amber-700 mb-0.5">交接备注</p>
+              <p className="text-xs text-amber-800">{handoffNote}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-3 pt-3 border-t border-slate-100 no-card-click">
         <div className="overflow-x-auto pb-1 -mx-1 px-1">
@@ -152,11 +168,21 @@ export default function PatientCard({ appointment }: PatientCardProps) {
                 {historyList.map((h) => (
                   <div
                     key={h.id}
-                    className="p-2 bg-slate-50/80 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors"
+                    className={cn(
+                      'p-2 rounded-lg border transition-colors',
+                      h.isPrinted
+                        ? 'bg-green-50/50 border-green-100 hover:border-green-200'
+                        : 'bg-amber-50/50 border-amber-100 hover:border-amber-200'
+                    )}
                   >
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] text-slate-500">
-                        {h.printedAt}
+                      <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        {h.isPrinted ? (
+                          <><Printer className="w-2.5 h-2.5 text-green-600" /> 打印时间：</>
+                        ) : (
+                          <><Save className="w-2.5 h-2.5 text-amber-600" /> 保存时间：</>
+                        )}
+                        {getDisplayTime(h)}
                       </span>
                       <span className={cn(
                         'flex items-center gap-0.5 px-1.5 py-px rounded text-[10px] font-medium',
@@ -164,11 +190,7 @@ export default function PatientCard({ appointment }: PatientCardProps) {
                           ? 'bg-green-100 text-green-700'
                           : 'bg-amber-100 text-amber-700'
                       )}>
-                        {h.isPrinted ? (
-                          <><Printer className="w-2.5 h-2.5" /> 已打印</>
-                        ) : (
-                          <><Save className="w-2.5 h-2.5" /> 仅保存</>
-                        )}
+                        {h.isPrinted ? '已打印' : '草稿'}
                       </span>
                     </div>
                     <div className="flex flex-wrap gap-1 mb-1">

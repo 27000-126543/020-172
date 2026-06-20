@@ -31,6 +31,7 @@ export interface Appointment {
   doctorName: string;
   stage: ConsultationStage;
   lastReview?: ReviewHistory;
+  handoffNote?: string;
 }
 
 export interface SpeechTemplate {

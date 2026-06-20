@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Minus, GripVertical, User, Stethoscope, MessageSquareText, ClipboardList } from 'lucide-react';
+import { X, Minus, GripVertical, User, Stethoscope, MessageSquareText, ClipboardList, MessageSquare, Send } from 'lucide-react';
 import { useAppStore, getRiskSpeeches } from '../store';
 import { RISK_FACTOR_LABELS } from '../types';
 import RiskAlert from './RiskAlert';
@@ -19,18 +19,29 @@ export default function FloatingWindow() {
     toggleReviewPanel,
     getRiskSpeeches,
     getPatientSummary,
-    setConsultationStage
+    setConsultationStage,
+    setHandoffNote
   } = useAppStore();
 
   const { isOpen, appointment, position, isMinimized, showReviewPanel } = floatingWindow;
   const windowRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [handoffText, setHandoffText] = useState('');
+  const [showHandoff, setShowHandoff] = useState(false);
 
   const patient = appointment?.patient;
   const riskSpeeches = patient ? getRiskSpeeches(patient.riskFactors) : [];
   const hasRisks = patient && patient.riskFactors.length > 0;
   const patientSummary = appointment ? getPatientSummary(appointment) : null;
+
+  useEffect(() => {
+    if (appointment?.handoffNote) {
+      setHandoffText(appointment.handoffNote);
+    } else {
+      setHandoffText('');
+    }
+  }, [appointment?.id, appointment?.handoffNote]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.window-controls')) return;
@@ -67,6 +78,21 @@ export default function FloatingWindow() {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, dragOffset, setWindowPosition]);
+
+  const handleSaveHandoff = () => {
+    if (appointment) {
+      setHandoffNote(appointment.id, handoffText.trim());
+      setShowHandoff(false);
+    }
+  };
+
+  const handoffQuickNotes = [
+    '先量血压',
+    '先拍片',
+    '暂缓治疗',
+    '需术前签字',
+    '请内科会诊'
+  ];
 
   if (!isOpen || !appointment) return null;
 
@@ -160,6 +186,18 @@ export default function FloatingWindow() {
 
           <div className="window-controls flex items-center gap-1 flex-shrink-0">
             <button
+              onClick={() => setShowHandoff(!showHandoff)}
+              className={cn(
+                'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
+                showHandoff || appointment.handoffNote
+                  ? 'bg-amber-500 text-white'
+                  : 'hover:bg-slate-200 text-slate-500'
+              )}
+              title="交接备注"
+            >
+              <MessageSquare className="w-4 h-4" />
+            </button>
+            <button
               onClick={toggleReviewPanel}
               className={cn(
                 'w-7 h-7 rounded-lg flex items-center justify-center transition-colors',
@@ -196,6 +234,61 @@ export default function FloatingWindow() {
               exit={{ opacity: 0, height: 0 }}
               className="flex-1 overflow-hidden flex flex-col"
             >
+              <AnimatePresence>
+                {showHandoff && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="border-b border-slate-200/50 bg-amber-50/50 no-drag overflow-hidden"
+                  >
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="w-4 h-4 text-amber-600" />
+                        <span className="text-sm font-medium text-amber-700">交接备注 · 给护士</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {handoffQuickNotes.map(note => (
+                          <button
+                            key={note}
+                            onClick={() => setHandoffText(handoffText ? `${handoffText}，${note}` : note)}
+                            className={cn(
+                              'px-2 py-0.5 rounded text-[11px] transition-all',
+                              handoffText.includes(note)
+                                ? 'bg-amber-200 text-amber-800'
+                                : 'bg-white text-amber-700 border border-amber-200 hover:bg-amber-100'
+                            )}
+                          >
+                            {note}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <textarea
+                          value={handoffText}
+                          onChange={(e) => setHandoffText(e.target.value)}
+                          placeholder="输入需要交接的注意事项..."
+                          className="flex-1 px-3 py-2 bg-white border border-amber-200 rounded-lg text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 transition-all resize-none"
+                          rows={2}
+                        />
+                        <button
+                          onClick={handleSaveHandoff}
+                          disabled={!handoffText.trim()}
+                          className={cn(
+                            'px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1',
+                            handoffText.trim()
+                              ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white hover:from-amber-600 hover:to-amber-700 shadow-lg'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          )}
+                        >
+                          <Send className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 no-drag overflow-x-auto">
                 <StageProgress
                   currentStage={appointment.stage}

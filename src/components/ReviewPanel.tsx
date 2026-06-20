@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Printer, Copy, MessageSquare, FileText, Save, History } from 'lucide-react';
+import { Check, Printer, Copy, MessageSquare, FileText, Save, History, RotateCcw } from 'lucide-react';
 import { useAppStore, nextVisitOptions } from '../store';
 import { treatmentItems } from '../data/mockData';
 import { cn } from '../lib/utils';
@@ -13,7 +13,8 @@ export default function ReviewPanel() {
     generatedReview,
     floatingWindow,
     saveReviewHistory,
-    getPatientReviewHistory
+    getPatientReviewHistory,
+    applyReviewHistory
   } = useAppStore();
 
   const [activeSection, setActiveSection] = useState<'select' | 'verbal' | 'printed' | 'history'>('select');
@@ -23,8 +24,8 @@ export default function ReviewPanel() {
   const { treatments, nextVisit, customNotes } = selectedReviewItems;
   const patient = floatingWindow.appointment?.patient;
   const patientId = floatingWindow.appointment?.patientId;
-  const lastReview = floatingWindow.appointment?.lastReview;
-  const historyList = patientId ? getPatientReviewHistory(patientId).slice(0, 5) : [];
+  const appointment = floatingWindow.appointment;
+  const historyList = patientId ? getPatientReviewHistory(patientId, appointment || undefined).slice(0, 5) : [];
 
   useEffect(() => {
     if (treatments.length > 0 && !generatedReview) {
@@ -109,6 +110,15 @@ export default function ReviewPanel() {
       </html>
     `);
     printWindow.document.close();
+  };
+
+  const handleApplyHistory = (history: any) => {
+    applyReviewHistory(history);
+    setActiveSection('select');
+  };
+
+  const getDisplayTime = (h: any) => {
+    return h.isPrinted ? h.printedAt : h.createdAt;
   };
 
   const sections = [
@@ -371,21 +381,28 @@ export default function ReviewPanel() {
                   {historyList.map((h) => (
                     <div
                       key={h.id}
-                      className="p-3 bg-slate-50 rounded-xl border border-slate-200 hover:border-blue-200 transition-colors"
+                      className={cn(
+                        'p-3 rounded-xl border transition-colors',
+                        h.isPrinted
+                          ? 'bg-green-50/30 border-green-100 hover:border-green-200'
+                          : 'bg-amber-50/30 border-amber-100 hover:border-amber-200'
+                      )}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] text-slate-500">{h.printedAt}</span>
+                        <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                          {h.isPrinted ? (
+                            <><Printer className="w-2.5 h-2.5 text-green-600" /> 打印时间：{getDisplayTime(h)}</>
+                          ) : (
+                            <><Save className="w-2.5 h-2.5 text-amber-600" /> 保存时间：{getDisplayTime(h)}</>
+                          )}
+                        </span>
                         <span className={cn(
                           'flex items-center gap-0.5 px-1.5 py-px rounded text-[10px] font-medium',
                           h.isPrinted
                             ? 'bg-green-100 text-green-700'
                             : 'bg-amber-100 text-amber-700'
                         )}>
-                          {h.isPrinted ? (
-                            <><Printer className="w-2.5 h-2.5" /> 已打印</>
-                          ) : (
-                            <><Save className="w-2.5 h-2.5" /> 仅保存</>
-                          )}
+                          {h.isPrinted ? '已打印' : '草稿'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mb-2">
@@ -415,7 +432,7 @@ export default function ReviewPanel() {
                           whileHover={{ scale: 1.01 }}
                           whileTap={{ scale: 0.99 }}
                           onClick={() => handleCopy(h.verbalText)}
-                          className="flex-1 py-1.5 bg-white hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
+                          className="flex-1 py-1.5 bg-white hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
                         >
                           <Copy className="w-3 h-3" />
                           复制口头
@@ -424,10 +441,19 @@ export default function ReviewPanel() {
                           whileHover={{ scale: 1.01 }}
                           whileTap={{ scale: 0.99 }}
                           onClick={() => handleCopy(h.printedText)}
-                          className="flex-1 py-1.5 bg-white hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
+                          className="flex-1 py-1.5 bg-white hover:bg-slate-50 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
                         >
                           <Copy className="w-3 h-3" />
                           复制小票
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => handleApplyHistory(h)}
+                          className="flex-1 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-lg text-xs font-medium text-white transition-all flex items-center justify-center gap-1"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          一键带入
                         </motion.button>
                       </div>
                     </div>

@@ -31,12 +31,14 @@ interface AppState {
   setSelectedReviewItems: (items: Partial<SelectedReviewItems>) => void;
   generateReview: (autoSwitch?: boolean) => void;
   saveReviewHistory: (isPrinted?: boolean) => void;
+  applyReviewHistory: (history: ReviewHistory) => void;
   setConsultationStage: (appointmentId: string, stage: ConsultationStage) => void;
+  setHandoffNote: (appointmentId: string, note: string) => void;
   getSpeechTemplates: (treatmentType: string) => typeof mockSpeechTemplates;
   getRiskSpeeches: (riskFactors: string[]) => typeof mockRiskSpeeches;
   getPatientSummary: (appointment: Appointment) => PatientSummary;
   getFilteredAppointments: () => Appointment[];
-  getPatientReviewHistory: (patientId: string) => ReviewHistory[];
+  getPatientReviewHistory: (patientId: string, appointment?: Appointment) => ReviewHistory[];
 }
 
 const getTodayDate = () => {
@@ -262,6 +264,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     };
 
+    const nowStr = formatTime(now);
     const historyItem: ReviewHistory = {
       id: `rh-${Date.now()}`,
       patientId: floatingWindow.appointment.patientId,
@@ -271,8 +274,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       customNotes: selectedReviewItems.customNotes,
       verbalText: generatedReview.verbalText,
       printedText: generatedReview.printedText,
-      printedAt: formatTime(now),
-      createdAt: formatTime(now),
+      printedAt: nowStr,
+      createdAt: nowStr,
       isPrinted
     };
 
@@ -299,8 +302,56 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  getPatientReviewHistory: (patientId) => {
-    return get().reviewHistory.filter(h => h.patientId === patientId);
+  getPatientReviewHistory: (patientId, appointment) => {
+    const savedHistory = get().reviewHistory.filter(h => h.patientId === patientId);
+    const allHistory = [...savedHistory];
+    if (appointment?.lastReview && !allHistory.find(h => h.id === appointment.lastReview?.id)) {
+      allHistory.push(appointment.lastReview);
+    }
+    return allHistory.sort((a, b) => {
+      const timeA = a.isPrinted ? a.printedAt : a.createdAt;
+      const timeB = b.isPrinted ? b.printedAt : b.createdAt;
+      return timeB.localeCompare(timeA);
+    });
+  },
+
+  applyReviewHistory: (history) => {
+    set({
+      selectedReviewItems: {
+        treatments: [...history.treatments],
+        nextVisit: history.nextVisit || '',
+        customNotes: history.customNotes || ''
+      }
+    });
+    setTimeout(() => {
+      get().generateReview(false);
+    }, 0);
+  },
+
+  setHandoffNote: (appointmentId, note) => {
+    const updatedAppointments = get().appointments.map(apt => {
+      if (apt.id === appointmentId) {
+        return { ...apt, handoffNote: note };
+      }
+      return apt;
+    });
+
+    const currentAppointment = get().floatingWindow.appointment;
+    const windowUpdate = get().floatingWindow.appointment?.id === appointmentId
+      ? {
+          appointment: currentAppointment ? { ...currentAppointment, handoffNote: note } : null
+        }
+      : null;
+
+    set({
+      appointments: updatedAppointments,
+      ...(windowUpdate && {
+        floatingWindow: {
+          ...get().floatingWindow,
+          ...windowUpdate
+        }
+      })
+    });
   },
 
   setConsultationStage: (appointmentId, stage) => {

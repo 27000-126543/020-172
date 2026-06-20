@@ -41,7 +41,8 @@ export const mockAppointments: Appointment[] = [
     status: 'in-progress',
     doctorId: 'doc-001',
     doctorName: '李医生',
-    stage: 'exam'
+    stage: 'exam',
+    handoffNote: '患者孕期，避免X光，保守治疗'
   },
   {
     id: 'apt-003',
@@ -62,7 +63,8 @@ export const mockAppointments: Appointment[] = [
     status: 'pending',
     doctorId: 'doc-001',
     doctorName: '李医生',
-    stage: 'waiting'
+    stage: 'waiting',
+    handoffNote: '先量血压，血糖高则暂缓治疗'
   },
   {
     id: 'apt-004',
