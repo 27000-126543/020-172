@@ -7,6 +7,7 @@ interface AppState {
   appointments: Appointment[];
   selectedDate: string;
   searchQuery: string;
+  handoffFilter: string;
   floatingWindow: {
     isOpen: boolean;
     appointment: Appointment | null;
@@ -17,10 +18,13 @@ interface AppState {
     showSummary: boolean;
   };
   selectedReviewItems: SelectedReviewItems;
+  originalReviewItems: SelectedReviewItems | null;
+  appliedHistoryId: string | null;
   generatedReview: GeneratedReview | null;
   reviewHistory: ReviewHistory[];
   setSelectedDate: (date: string) => void;
   setSearchQuery: (query: string) => void;
+  setHandoffFilter: (filter: string) => void;
   openFloatingWindow: (appointment: Appointment, position?: { x: number; y: number }) => void;
   closeFloatingWindow: () => void;
   toggleMinimize: () => void;
@@ -32,6 +36,7 @@ interface AppState {
   generateReview: (autoSwitch?: boolean) => void;
   saveReviewHistory: (isPrinted?: boolean) => void;
   applyReviewHistory: (history: ReviewHistory) => void;
+  clearAppliedHistory: () => void;
   setConsultationStage: (appointmentId: string, stage: ConsultationStage) => void;
   setHandoffNote: (appointmentId: string, note: string) => void;
   getSpeechTemplates: (treatmentType: string) => typeof mockSpeechTemplates;
@@ -39,6 +44,12 @@ interface AppState {
   getPatientSummary: (appointment: Appointment) => PatientSummary;
   getFilteredAppointments: () => Appointment[];
   getPatientReviewHistory: (patientId: string, appointment?: Appointment) => ReviewHistory[];
+  getReviewItemChanges: () => {
+    addedTreatments: string[];
+    removedTreatments: string[];
+    changedNextVisit: boolean;
+    changedCustomNotes: boolean;
+  } | null;
 }
 
 const getTodayDate = () => {
@@ -55,10 +66,48 @@ const loadReviewHistory = (): ReviewHistory[] => {
   }
 };
 
+const loadHandoffNotes = (): Record<string, string> => {
+  try {
+    const saved = localStorage.getItem('handoffNotes');
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+};
+
+const initializeAppointments = (): Appointment[] => {
+  const savedNotes = loadHandoffNotes();
+  return mockAppointments.map(apt => {
+    if (savedNotes[apt.id] !== undefined) {
+      return { ...apt, handoffNote: savedNotes[apt.id] };
+    }
+    return apt;
+  });
+};
+
+const saveHandoffNotes = (appointments: Appointment[]) => {
+  const notes: Record<string, string> = {};
+  appointments.forEach(apt => {
+    if (apt.handoffNote) {
+      notes[apt.id] = apt.handoffNote;
+    }
+  });
+  localStorage.setItem('handoffNotes', JSON.stringify(notes));
+};
+
+export const HANDOFF_CATEGORIES = [
+  { key: '血压', label: '先量血压', color: 'bg-red-100 text-red-700' },
+  { key: '拍片', label: '先拍片', color: 'bg-purple-100 text-purple-700' },
+  { key: '暂缓', label: '暂缓治疗', color: 'bg-amber-100 text-amber-700' },
+  { key: '签字', label: '需术前签字', color: 'bg-orange-100 text-orange-700' },
+  { key: '会诊', label: '请内科会诊', color: 'bg-blue-100 text-blue-700' }
+];
+
 export const useAppStore = create<AppState>((set, get) => ({
-  appointments: mockAppointments,
+  appointments: initializeAppointments(),
   selectedDate: getTodayDate(),
   searchQuery: '',
+  handoffFilter: '',
   floatingWindow: {
     isOpen: false,
     appointment: null,
@@ -73,12 +122,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     nextVisit: '',
     customNotes: ''
   },
+  originalReviewItems: null,
+  appliedHistoryId: null,
   generatedReview: null,
   reviewHistory: loadReviewHistory(),
 
   setSelectedDate: (date) => set({ selectedDate: date }),
 
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  setHandoffFilter: (filter) => set({ handoffFilter: filter }),
 
   openFloatingWindow: (appointment, position) => {
     const stageTab = STAGE_TO_TAB[appointment.stage];
@@ -101,6 +154,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         nextVisit: '',
         customNotes: ''
       },
+      originalReviewItems: null,
+      appliedHistoryId: null,
       generatedReview: null
     });
 
@@ -292,6 +347,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       reviewHistory: newHistory,
       appointments: updatedAppointments,
+      originalReviewItems: null,
+      appliedHistoryId: null,
       floatingWindow: {
         ...get().floatingWindow,
         appointment: {
@@ -316,16 +373,42 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   applyReviewHistory: (history) => {
+    const newItems = {
+      treatments: [...history.treatments],
+      nextVisit: history.nextVisit || '',
+      customNotes: history.customNotes || ''
+    };
     set({
-      selectedReviewItems: {
-        treatments: [...history.treatments],
-        nextVisit: history.nextVisit || '',
-        customNotes: history.customNotes || ''
-      }
+      selectedReviewItems: newItems,
+      originalReviewItems: { ...newItems },
+      appliedHistoryId: history.id
     });
     setTimeout(() => {
       get().generateReview(false);
     }, 0);
+  },
+
+  clearAppliedHistory: () => {
+    set({
+      originalReviewItems: null,
+      appliedHistoryId: null
+    });
+  },
+
+  getReviewItemChanges: () => {
+    const { selectedReviewItems, originalReviewItems, appliedHistoryId } = get();
+    if (!appliedHistoryId || !originalReviewItems) return null;
+
+    const addedTreatments = selectedReviewItems.treatments.filter(
+      t => !originalReviewItems.treatments.includes(t)
+    );
+    const removedTreatments = originalReviewItems.treatments.filter(
+      t => !selectedReviewItems.treatments.includes(t)
+    );
+    const changedNextVisit = selectedReviewItems.nextVisit !== originalReviewItems.nextVisit;
+    const changedCustomNotes = selectedReviewItems.customNotes !== originalReviewItems.customNotes;
+
+    return { addedTreatments, removedTreatments, changedNextVisit, changedCustomNotes };
   },
 
   setHandoffNote: (appointmentId, note) => {
@@ -335,6 +418,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return apt;
     });
+
+    saveHandoffNotes(updatedAppointments);
 
     const currentAppointment = get().floatingWindow.appointment;
     const windowUpdate = get().floatingWindow.appointment?.id === appointmentId
@@ -474,13 +559,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   getFilteredAppointments: () => {
-    const { appointments, selectedDate, searchQuery, reviewHistory } = get();
+    const { appointments, selectedDate, searchQuery, reviewHistory, handoffFilter } = get();
     return appointments.filter(apt => {
       const dateMatch = apt.date === selectedDate;
       const searchMatch = !searchQuery || 
         apt.patient.name.includes(searchQuery) ||
         apt.treatmentType.includes(searchQuery);
-      return dateMatch && searchMatch;
+      const handoffMatch = !handoffFilter || 
+        (apt.handoffNote && apt.handoffNote.includes(handoffFilter));
+      return dateMatch && searchMatch && handoffMatch;
     }).map(apt => {
       const patientHistory = reviewHistory.find(h => h.patientId === apt.patientId);
       if (patientHistory && !apt.lastReview) {
