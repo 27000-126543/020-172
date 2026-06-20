@@ -12,7 +12,8 @@ export default function ReviewPanel() {
     generateReview,
     generatedReview,
     floatingWindow,
-    saveReviewHistory
+    saveReviewHistory,
+    getPatientReviewHistory
   } = useAppStore();
 
   const [activeSection, setActiveSection] = useState<'select' | 'verbal' | 'printed' | 'history'>('select');
@@ -21,7 +22,9 @@ export default function ReviewPanel() {
 
   const { treatments, nextVisit, customNotes } = selectedReviewItems;
   const patient = floatingWindow.appointment?.patient;
+  const patientId = floatingWindow.appointment?.patientId;
   const lastReview = floatingWindow.appointment?.lastReview;
+  const historyList = patientId ? getPatientReviewHistory(patientId).slice(0, 5) : [];
 
   useEffect(() => {
     if (treatments.length > 0 && !generatedReview) {
@@ -37,11 +40,9 @@ export default function ReviewPanel() {
       ? treatments.filter(t => t !== item)
       : [...treatments, item];
     setSelectedReviewItems({ treatments: newTreatments });
-  };
-
-  const handleGenerate = () => {
-    generateReview();
-    setActiveSection('verbal');
+    if (newTreatments.length > 0 && activeSection === 'select') {
+      setActiveSection('verbal');
+    }
   };
 
   const handleCopy = (text: string) => {
@@ -51,14 +52,14 @@ export default function ReviewPanel() {
   };
 
   const handleSave = () => {
-    saveReviewHistory();
+    saveReviewHistory(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handlePrint = () => {
     if (!generatedReview) return;
-    handleSave();
+    saveReviewHistory(true);
 
     const printWindow = window.open('', '_blank', 'width=300,height=600');
     if (!printWindow) return;
@@ -216,20 +217,11 @@ export default function ReviewPanel() {
                 />
               </div>
 
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                onClick={handleGenerate}
-                disabled={treatments.length === 0}
-                className={cn(
-                  'w-full py-3 rounded-xl font-medium text-white transition-all',
-                  treatments.length > 0
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-lg hover:shadow-xl'
-                    : 'bg-slate-300 cursor-not-allowed'
-                )}
-              >
-                生成复诊交代
-              </motion.button>
+              {treatments.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-2">
+                  请选择至少一个治疗项目，将自动生成交代内容
+                </p>
+              )}
             </motion.div>
           )}
 
@@ -284,7 +276,7 @@ export default function ReviewPanel() {
               ) : (
                 <div className="text-center py-12 text-slate-400">
                   <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">请先选择治疗项目并生成</p>
+                  <p className="text-sm">请先选择治疗项目</p>
                 </div>
               )}
             </motion.div>
@@ -352,7 +344,7 @@ export default function ReviewPanel() {
               ) : (
                 <div className="text-center py-12 text-slate-400">
                   <Printer className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                  <p className="text-sm">请先选择治疗项目并生成</p>
+                  <p className="text-sm">请先选择治疗项目</p>
                 </div>
               )}
             </motion.div>
@@ -366,61 +358,80 @@ export default function ReviewPanel() {
               exit={{ opacity: 0, x: -10 }}
               className="space-y-3"
             >
-              {lastReview ? (
-                <div className="space-y-3">
+              {historyList.length > 0 ? (
+                <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <History className="w-4 h-4 text-slate-500" />
-                      <span className="text-sm font-medium text-slate-700">最近一次交代</span>
+                      <span className="text-sm font-medium text-slate-700">最近交代记录</span>
                     </div>
-                    <span className="text-xs text-slate-400">{lastReview.printedAt}</span>
+                    <span className="text-xs text-slate-400">共 {historyList.length} 条</span>
                   </div>
 
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xs text-slate-500">治疗项目：</span>
-                      <div className="flex flex-wrap gap-1">
-                        {lastReview.treatments.map(t => (
-                          <span key={t} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
-                            {t}
-                          </span>
-                        ))}
+                  {historyList.map((h) => (
+                    <div
+                      key={h.id}
+                      className="p-3 bg-slate-50 rounded-xl border border-slate-200 hover:border-blue-200 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] text-slate-500">{h.printedAt}</span>
+                        <span className={cn(
+                          'flex items-center gap-0.5 px-1.5 py-px rounded text-[10px] font-medium',
+                          h.isPrinted
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-amber-100 text-amber-700'
+                        )}>
+                          {h.isPrinted ? (
+                            <><Printer className="w-2.5 h-2.5" /> 已打印</>
+                          ) : (
+                            <><Save className="w-2.5 h-2.5" /> 仅保存</>
+                          )}
+                        </span>
                       </div>
-                    </div>
-                    {lastReview.nextVisit && (
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs text-slate-500">复诊安排：</span>
-                        <span className="text-xs text-green-600 font-medium">{lastReview.nextVisit}</span>
+                        <span className="text-xs text-slate-500">治疗项目：</span>
+                        <div className="flex flex-wrap gap-1">
+                          {h.treatments.map(t => (
+                            <span key={t} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                    <div className="pt-2 border-t border-slate-200">
-                      <p className="text-xs text-slate-500 mb-1">口头交代摘要：</p>
-                      <p className="text-xs text-slate-600 line-clamp-3">
-                        {lastReview.verbalText}
-                      </p>
+                      {h.nextVisit && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs text-slate-500">复诊安排：</span>
+                          <span className="text-xs text-green-600 font-medium">{h.nextVisit}</span>
+                        </div>
+                      )}
+                      <div className="pt-2 border-t border-slate-200">
+                        <p className="text-xs text-slate-500 mb-1">口头交代摘要：</p>
+                        <p className="text-xs text-slate-600 line-clamp-2">
+                          {h.verbalText}
+                        </p>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => handleCopy(h.verbalText)}
+                          className="flex-1 py-1.5 bg-white hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
+                        >
+                          <Copy className="w-3 h-3" />
+                          复制口头
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.01 }}
+                          whileTap={{ scale: 0.99 }}
+                          onClick={() => handleCopy(h.printedText)}
+                          className="flex-1 py-1.5 bg-white hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1 border border-slate-200"
+                        >
+                          <Copy className="w-3 h-3" />
+                          复制小票
+                        </motion.button>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.99 }}
-                      onClick={() => handleCopy(lastReview.verbalText)}
-                      className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1"
-                    >
-                      <Copy className="w-3 h-3" />
-                      复制口头交代
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.01 }}
-                      whileTap={{ scale: 0.99 }}
-                      onClick={() => handleCopy(lastReview.printedText)}
-                      className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1"
-                    >
-                      <Copy className="w-3 h-3" />
-                      复制小票内容
-                    </motion.button>
-                  </div>
+                  ))}
                 </div>
               ) : (
                 <div className="text-center py-12 text-slate-400">

@@ -35,7 +35,10 @@ export default function StageProgress({ currentStage, onStageChange, compact = f
             <motion.button
               whileHover={isClickable ? { scale: 1.1 } : {}}
               whileTap={isClickable ? { scale: 0.95 } : {}}
-              onClick={() => isClickable && onStageChange(stage.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isClickable) onStageChange(stage.id);
+              }}
               className={cn(
                 'flex flex-col items-center gap-0.5',
                 compact ? 'px-1.5 py-1' : 'px-2 py-1.5',

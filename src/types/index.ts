@@ -69,6 +69,7 @@ export interface ReviewHistory {
   printedText: string;
   printedAt: string;
   createdAt: string;
+  isPrinted: boolean;
 }
 
 export interface SelectedReviewItems {

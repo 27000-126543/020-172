@@ -1,18 +1,20 @@
-import { motion } from 'framer-motion';
-import { Clock, AlertTriangle, User, Stethoscope, History, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Clock, AlertTriangle, User, Stethoscope, History, ChevronRight, ChevronDown, Printer, Save } from 'lucide-react';
 import type { Appointment } from '../types';
 import { RISK_FACTOR_LABELS, APPOINTMENT_STATUS_LABELS, CONSULTATION_STAGE_LABELS } from '../types';
 import { useAppStore } from '../store';
 import StageProgress from './StageProgress';
 import { cn } from '../lib/utils';
+import { useState } from 'react';
 
 interface PatientCardProps {
   appointment: Appointment;
 }
 
 export default function PatientCard({ appointment }: PatientCardProps) {
-  const { openFloatingWindow, setConsultationStage } = useAppStore();
-  const { patient, time, treatmentType, status, stage, lastReview } = appointment;
+  const { openFloatingWindow, setConsultationStage, getPatientReviewHistory } = useAppStore();
+  const { patient, time, treatmentType, status, stage, patientId } = appointment;
+  const [showHistory, setShowHistory] = useState(false);
 
   const statusColors = {
     pending: 'bg-slate-100 text-slate-600',
@@ -28,12 +30,15 @@ export default function PatientCard({ appointment }: PatientCardProps) {
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.no-card-click')) return;
     const rect = e.currentTarget.getBoundingClientRect();
     openFloatingWindow(appointment, {
       x: Math.min(rect.right + 20, window.innerWidth - 440),
       y: Math.max(rect.top, 100)
     });
   };
+
+  const historyList = getPatientReviewHistory(patientId).slice(0, 5);
 
   return (
     <motion.div
@@ -82,7 +87,7 @@ export default function PatientCard({ appointment }: PatientCardProps) {
         </div>
       </div>
 
-      <div className="mt-3 pt-3 border-t border-slate-100">
+      <div className="mt-3 pt-3 border-t border-slate-100 no-card-click">
         <div className="overflow-x-auto pb-1 -mx-1 px-1">
           <StageProgress
             currentStage={stage}
@@ -116,40 +121,79 @@ export default function PatientCard({ appointment }: PatientCardProps) {
         </div>
       )}
 
-      {lastReview && (
-        <div className="mt-3 pt-3 border-t border-slate-100">
-          <div className="flex items-center gap-1.5 mb-1.5">
+      {historyList.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-slate-100 no-card-click">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowHistory(!showHistory);
+            }}
+            className="w-full flex items-center gap-1.5 mb-2 hover:bg-slate-50 rounded px-1 py-0.5 -mx-1 transition-colors"
+          >
             <History className="w-3.5 h-3.5 text-blue-500" />
-            <span className="text-xs font-medium text-blue-600">上次交代记录</span>
-          </div>
-          <div className="p-2 bg-blue-50/50 rounded-lg border border-blue-100">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[11px] text-slate-500">
-                {lastReview.printedAt}
-              </span>
-              <div className="flex flex-wrap gap-1">
-                {lastReview.treatments.slice(0, 2).map(t => (
-                  <span key={t} className="px-1 py-px bg-white text-blue-700 text-[10px] rounded border border-blue-200">
-                    {t}
-                  </span>
+            <span className="text-xs font-medium text-blue-600 flex-1 text-left">
+              复诊交代历史（{historyList.length}条）
+            </span>
+            {showHistory ? (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+            )}
+          </button>
+
+          <AnimatePresence>
+            {showHistory && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+              >
+                {historyList.map((h) => (
+                  <div
+                    key={h.id}
+                    className="p-2 bg-slate-50/80 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-slate-500">
+                        {h.printedAt}
+                      </span>
+                      <span className={cn(
+                        'flex items-center gap-0.5 px-1.5 py-px rounded text-[10px] font-medium',
+                        h.isPrinted
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-amber-100 text-amber-700'
+                      )}>
+                        {h.isPrinted ? (
+                          <><Printer className="w-2.5 h-2.5" /> 已打印</>
+                        ) : (
+                          <><Save className="w-2.5 h-2.5" /> 仅保存</>
+                        )}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {h.treatments.slice(0, 3).map(t => (
+                        <span key={t} className="px-1 py-px bg-white text-blue-700 text-[10px] rounded border border-blue-100">
+                          {t}
+                        </span>
+                      ))}
+                      {h.treatments.length > 3 && (
+                        <span className="px-1 py-px text-slate-400 text-[10px]">
+                          +{h.treatments.length - 3}
+                        </span>
+                      )}
+                    </div>
+                    {h.nextVisit && (
+                      <p className="text-[10px] text-green-600 mb-0.5">{h.nextVisit}</p>
+                    )}
+                    <p className="text-[11px] text-slate-500 line-clamp-1">
+                      {h.verbalText.split('\n')[0]}
+                    </p>
+                  </div>
                 ))}
-                {lastReview.treatments.length > 2 && (
-                  <span className="px-1 py-px text-slate-400 text-[10px]">
-                    +{lastReview.treatments.length - 2}
-                  </span>
-                )}
-              </div>
-            </div>
-            <p className="text-[11px] text-slate-600 line-clamp-2">
-              {lastReview.verbalText.split('\n')[0]}
-            </p>
-            <div className="flex items-center justify-between mt-1.5">
-              <span className="text-[10px] text-green-600">{lastReview.nextVisit}</span>
-              <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                点击查看详情 <ChevronRight className="w-3 h-3" />
-              </span>
-            </div>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
     </motion.div>

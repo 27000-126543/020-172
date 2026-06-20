@@ -30,12 +30,13 @@ interface AppState {
   toggleSummary: () => void;
   setSelectedReviewItems: (items: Partial<SelectedReviewItems>) => void;
   generateReview: (autoSwitch?: boolean) => void;
-  saveReviewHistory: () => void;
+  saveReviewHistory: (isPrinted?: boolean) => void;
   setConsultationStage: (appointmentId: string, stage: ConsultationStage) => void;
   getSpeechTemplates: (treatmentType: string) => typeof mockSpeechTemplates;
   getRiskSpeeches: (riskFactors: string[]) => typeof mockRiskSpeeches;
   getPatientSummary: (appointment: Appointment) => PatientSummary;
   getFilteredAppointments: () => Appointment[];
+  getPatientReviewHistory: (patientId: string) => ReviewHistory[];
 }
 
 const getTodayDate = () => {
@@ -81,6 +82,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const stageTab = STAGE_TO_TAB[appointment.stage];
     const isReview = stageTab === 'review';
     const activeTab: SpeechCategory = isReview ? 'post-treatment' : (stageTab as SpeechCategory);
+    const initialTreatments = appointment.treatmentType ? [appointment.treatmentType] : [];
 
     set({
       floatingWindow: {
@@ -90,15 +92,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         isMinimized: false,
         activeTab,
         showReviewPanel: isReview,
-        showSummary: appointment.patient.riskFactors.length > 0
+        showSummary: true
       },
       selectedReviewItems: {
-        treatments: appointment.treatmentType ? [appointment.treatmentType] : [],
+        treatments: initialTreatments,
         nextVisit: '',
         customNotes: ''
       },
       generatedReview: null
     });
+
+    if (initialTreatments.length > 0) {
+      setTimeout(() => {
+        get().generateReview(false);
+      }, 0);
+    }
   },
 
   closeFloatingWindow: () => set({
@@ -155,12 +163,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   }),
 
-  setSelectedReviewItems: (items) => set({
-    selectedReviewItems: {
+  setSelectedReviewItems: (items) => {
+    const newItems = {
       ...get().selectedReviewItems,
       ...items
+    };
+    set({ selectedReviewItems: newItems });
+    if (newItems.treatments.length > 0) {
+      setTimeout(() => {
+        get().generateReview(false);
+      }, 0);
+    } else {
+      set({ generatedReview: null });
     }
-  }),
+  },
 
   generateReview: (autoSwitch = true) => {
     const { selectedReviewItems, floatingWindow } = get();
@@ -237,7 +253,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set(stateUpdate as AppState);
   },
 
-  saveReviewHistory: () => {
+  saveReviewHistory: (isPrinted = false) => {
     const { generatedReview, selectedReviewItems, floatingWindow, reviewHistory } = get();
     if (!generatedReview || !floatingWindow.appointment) return;
 
@@ -256,7 +272,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       verbalText: generatedReview.verbalText,
       printedText: generatedReview.printedText,
       printedAt: formatTime(now),
-      createdAt: formatTime(now)
+      createdAt: formatTime(now),
+      isPrinted
     };
 
     const newHistory = [historyItem, ...reviewHistory].slice(0, 100);
@@ -280,6 +297,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
     });
+  },
+
+  getPatientReviewHistory: (patientId) => {
+    return get().reviewHistory.filter(h => h.patientId === patientId);
   },
 
   setConsultationStage: (appointmentId, stage) => {
