@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Printer, Copy, MessageSquare, FileText, ChevronDown, ChevronUp } from 'lucide-react';
+import { Check, Printer, Copy, MessageSquare, FileText, Save, History } from 'lucide-react';
 import { useAppStore, nextVisitOptions } from '../store';
 import { treatmentItems } from '../data/mockData';
 import { cn } from '../lib/utils';
@@ -11,14 +11,26 @@ export default function ReviewPanel() {
     setSelectedReviewItems,
     generateReview,
     generatedReview,
-    floatingWindow
+    floatingWindow,
+    saveReviewHistory
   } = useAppStore();
 
-  const [activeSection, setActiveSection] = useState<'select' | 'verbal' | 'printed'>('select');
+  const [activeSection, setActiveSection] = useState<'select' | 'verbal' | 'printed' | 'history'>('select');
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const { treatments, nextVisit, customNotes } = selectedReviewItems;
   const patient = floatingWindow.appointment?.patient;
+  const lastReview = floatingWindow.appointment?.lastReview;
+
+  useEffect(() => {
+    if (treatments.length > 0 && !generatedReview) {
+      generateReview(false);
+    }
+    if (treatments.length > 0 && generatedReview && activeSection === 'select') {
+      setActiveSection('verbal');
+    }
+  }, [treatments, generatedReview, activeSection, generateReview]);
 
   const toggleTreatment = (item: string) => {
     const newTreatments = treatments.includes(item)
@@ -29,9 +41,7 @@ export default function ReviewPanel() {
 
   const handleGenerate = () => {
     generateReview();
-    if (generatedReview) {
-      setActiveSection('verbal');
-    }
+    setActiveSection('verbal');
   };
 
   const handleCopy = (text: string) => {
@@ -40,8 +50,15 @@ export default function ReviewPanel() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSave = () => {
+    saveReviewHistory();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   const handlePrint = () => {
     if (!generatedReview) return;
+    handleSave();
 
     const printWindow = window.open('', '_blank', 'width=300,height=600');
     if (!printWindow) return;
@@ -64,42 +81,10 @@ export default function ReviewPanel() {
           .receipt {
             text-align: left;
           }
-          .header {
-            text-align: center;
-            border-bottom: 1px dashed #333;
-            padding-bottom: 8px;
-            margin-bottom: 8px;
-          }
-          .title {
-            font-size: 16px;
-            font-weight: bold;
-            margin: 0 0 4px 0;
-          }
-          .info-row {
-            margin: 2px 0;
-          }
-          .section {
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px dashed #333;
-          }
-          .section-title {
-            font-weight: bold;
-            margin-bottom: 4px;
-          }
-          .notes {
+          pre {
+            font-family: inherit;
+            margin: 0;
             white-space: pre-wrap;
-          }
-          .footer {
-            text-align: center;
-            border-top: 1px dashed #333;
-            padding-top: 8px;
-            margin-top: 8px;
-            font-size: 11px;
-          }
-          .signature {
-            margin-top: 20px;
-            text-align: right;
           }
           @media print {
             body { width: 280px; }
@@ -109,9 +94,7 @@ export default function ReviewPanel() {
       </head>
       <body>
         <div class="receipt">
-          <pre style="font-family: inherit; margin: 0; white-space: pre-wrap;">
-${generatedReview.printedText}
-          </pre>
+          <pre>${generatedReview.printedText}</pre>
         </div>
         <script>
           window.onload = function() {
@@ -130,7 +113,8 @@ ${generatedReview.printedText}
   const sections = [
     { id: 'select', label: '选择项目', icon: Check },
     { id: 'verbal', label: '口头交代', icon: MessageSquare },
-    { id: 'printed', label: '打印小票', icon: FileText }
+    { id: 'printed', label: '打印小票', icon: FileText },
+    { id: 'history', label: '历史记录', icon: History }
   ] as const;
 
   return (
@@ -144,14 +128,14 @@ ${generatedReview.printedText}
               key={section.id}
               onClick={() => setActiveSection(section.id)}
               className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-md text-xs font-medium transition-all',
+                'flex-1 flex items-center justify-center gap-1 py-1.5 px-1 rounded-md text-[11px] font-medium transition-all',
                 isActive
                   ? 'bg-white text-blue-600 shadow-sm'
                   : 'text-slate-500 hover:text-slate-700'
               )}
             >
               <Icon className="w-3.5 h-3.5" />
-              <span>{section.label}</span>
+              <span className="hidden sm:inline">{section.label}</span>
             </button>
           );
         })}
@@ -348,6 +332,15 @@ ${generatedReview.printedText}
                     <motion.button
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
+                      onClick={handleSave}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 rounded-xl text-sm font-medium text-white shadow-lg transition-all"
+                    >
+                      {saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                      {saved ? '已保存' : '保存记录'}
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
                       onClick={handlePrint}
                       className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-xl text-sm font-medium text-white shadow-lg transition-all"
                     >
@@ -360,6 +353,80 @@ ${generatedReview.printedText}
                 <div className="text-center py-12 text-slate-400">
                   <Printer className="w-10 h-10 mx-auto mb-3 opacity-50" />
                   <p className="text-sm">请先选择治疗项目并生成</p>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {activeSection === 'history' && (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="space-y-3"
+            >
+              {lastReview ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <History className="w-4 h-4 text-slate-500" />
+                      <span className="text-sm font-medium text-slate-700">最近一次交代</span>
+                    </div>
+                    <span className="text-xs text-slate-400">{lastReview.printedAt}</span>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs text-slate-500">治疗项目：</span>
+                      <div className="flex flex-wrap gap-1">
+                        {lastReview.treatments.map(t => (
+                          <span key={t} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    {lastReview.nextVisit && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs text-slate-500">复诊安排：</span>
+                        <span className="text-xs text-green-600 font-medium">{lastReview.nextVisit}</span>
+                      </div>
+                    )}
+                    <div className="pt-2 border-t border-slate-200">
+                      <p className="text-xs text-slate-500 mb-1">口头交代摘要：</p>
+                      <p className="text-xs text-slate-600 line-clamp-3">
+                        {lastReview.verbalText}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => handleCopy(lastReview.verbalText)}
+                      className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      复制口头交代
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      onClick={() => handleCopy(lastReview.printedText)}
+                      className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-medium text-slate-700 transition-all flex items-center justify-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      复制小票内容
+                    </motion.button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  <History className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">暂无历史记录</p>
+                  <p className="text-xs mt-1">打印或保存后将在此处显示</p>
                 </div>
               )}
             </motion.div>

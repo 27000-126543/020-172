@@ -1,6 +1,7 @@
 import { create } from 'zustand';
-import type { Appointment, SpeechCategory, GeneratedReview, SelectedReviewItems } from '../types';
-import { mockAppointments, mockSpeechTemplates, mockRiskSpeeches, mockReviewTemplates, nextVisitOptions } from '../data/mockData';
+import type { Appointment, SpeechCategory, GeneratedReview, SelectedReviewItems, ConsultationStage, PatientSummary, RiskFactor, ReviewHistory, TreatmentSuggestion } from '../types';
+import { STAGE_TO_TAB, RISK_FACTOR_LABELS, TREATMENT_SUGGESTION_LABELS } from '../types';
+import { mockAppointments, mockSpeechTemplates, mockRiskSpeeches, mockReviewTemplates, nextVisitOptions, XRAY_RECOMMENDATIONS } from '../data/mockData';
 
 interface AppState {
   appointments: Appointment[];
@@ -13,9 +14,11 @@ interface AppState {
     isMinimized: boolean;
     activeTab: SpeechCategory;
     showReviewPanel: boolean;
+    showSummary: boolean;
   };
   selectedReviewItems: SelectedReviewItems;
   generatedReview: GeneratedReview | null;
+  reviewHistory: ReviewHistory[];
   setSelectedDate: (date: string) => void;
   setSearchQuery: (query: string) => void;
   openFloatingWindow: (appointment: Appointment, position?: { x: number; y: number }) => void;
@@ -24,16 +27,29 @@ interface AppState {
   setActiveTab: (tab: SpeechCategory) => void;
   setWindowPosition: (position: { x: number; y: number }) => void;
   toggleReviewPanel: () => void;
+  toggleSummary: () => void;
   setSelectedReviewItems: (items: Partial<SelectedReviewItems>) => void;
-  generateReview: () => void;
+  generateReview: (autoSwitch?: boolean) => void;
+  saveReviewHistory: () => void;
+  setConsultationStage: (appointmentId: string, stage: ConsultationStage) => void;
   getSpeechTemplates: (treatmentType: string) => typeof mockSpeechTemplates;
   getRiskSpeeches: (riskFactors: string[]) => typeof mockRiskSpeeches;
+  getPatientSummary: (appointment: Appointment) => PatientSummary;
   getFilteredAppointments: () => Appointment[];
 }
 
 const getTodayDate = () => {
   const today = new Date();
   return today.toISOString().split('T')[0];
+};
+
+const loadReviewHistory = (): ReviewHistory[] => {
+  try {
+    const saved = localStorage.getItem('reviewHistory');
+    return saved ? JSON.parse(saved) : [];
+  } catch {
+    return [];
+  }
 };
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -46,7 +62,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     position: { x: 200, y: 100 },
     isMinimized: false,
     activeTab: 'before-exam',
-    showReviewPanel: false
+    showReviewPanel: false,
+    showSummary: true
   },
   selectedReviewItems: {
     treatments: [],
@@ -54,27 +71,35 @@ export const useAppStore = create<AppState>((set, get) => ({
     customNotes: ''
   },
   generatedReview: null,
+  reviewHistory: loadReviewHistory(),
 
   setSelectedDate: (date) => set({ selectedDate: date }),
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 
-  openFloatingWindow: (appointment, position) => set({
-    floatingWindow: {
-      isOpen: true,
-      appointment,
-      position: position || { x: 200, y: 100 },
-      isMinimized: false,
-      activeTab: 'before-exam',
-      showReviewPanel: false
-    },
-    selectedReviewItems: {
-      treatments: appointment.treatmentType ? [appointment.treatmentType] : [],
-      nextVisit: '',
-      customNotes: ''
-    },
-    generatedReview: null
-  }),
+  openFloatingWindow: (appointment, position) => {
+    const stageTab = STAGE_TO_TAB[appointment.stage];
+    const isReview = stageTab === 'review';
+    const activeTab: SpeechCategory = isReview ? 'post-treatment' : (stageTab as SpeechCategory);
+
+    set({
+      floatingWindow: {
+        isOpen: true,
+        appointment,
+        position: position || { x: 200, y: 100 },
+        isMinimized: false,
+        activeTab,
+        showReviewPanel: isReview,
+        showSummary: appointment.patient.riskFactors.length > 0
+      },
+      selectedReviewItems: {
+        treatments: appointment.treatmentType ? [appointment.treatmentType] : [],
+        nextVisit: '',
+        customNotes: ''
+      },
+      generatedReview: null
+    });
+  },
 
   closeFloatingWindow: () => set({
     floatingWindow: {
@@ -94,7 +119,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveTab: (tab) => set({
     floatingWindow: {
       ...get().floatingWindow,
-      activeTab: tab
+      activeTab: tab,
+      showReviewPanel: false
     }
   }),
 
@@ -105,10 +131,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   }),
 
-  toggleReviewPanel: () => set({
+  toggleReviewPanel: () => {
+    const willShowReview = !get().floatingWindow.showReviewPanel;
+    set({
+      floatingWindow: {
+        ...get().floatingWindow,
+        showReviewPanel: willShowReview,
+        activeTab: willShowReview ? 'post-treatment' : get().floatingWindow.activeTab
+      }
+    });
+    if (willShowReview) {
+      const { selectedReviewItems, generatedReview } = get();
+      if (selectedReviewItems.treatments.length > 0 && !generatedReview) {
+        get().generateReview(false);
+      }
+    }
+  },
+
+  toggleSummary: () => set({
     floatingWindow: {
       ...get().floatingWindow,
-      showReviewPanel: !get().floatingWindow.showReviewPanel
+      showSummary: !get().floatingWindow.showSummary
     }
   }),
 
@@ -119,7 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   }),
 
-  generateReview: () => {
+  generateReview: (autoSwitch = true) => {
     const { selectedReviewItems, floatingWindow } = get();
     const { treatments, nextVisit, customNotes } = selectedReviewItems;
     const patient = floatingWindow.appointment?.patient;
@@ -176,11 +219,102 @@ export const useAppStore = create<AppState>((set, get) => ({
     printedText += `联系电话：400-888-8888\n`;
     printedText += `================================\n`;
 
-    set({
+    const stateUpdate: Partial<AppState> = {
       generatedReview: {
         verbalText,
         printedText
       }
+    };
+
+    if (autoSwitch) {
+      stateUpdate.floatingWindow = {
+        ...get().floatingWindow,
+        showReviewPanel: true,
+        activeTab: 'post-treatment'
+      };
+    }
+
+    set(stateUpdate as AppState);
+  },
+
+  saveReviewHistory: () => {
+    const { generatedReview, selectedReviewItems, floatingWindow, reviewHistory } = get();
+    if (!generatedReview || !floatingWindow.appointment) return;
+
+    const now = new Date();
+    const formatTime = (d: Date) => {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+
+    const historyItem: ReviewHistory = {
+      id: `rh-${Date.now()}`,
+      patientId: floatingWindow.appointment.patientId,
+      appointmentId: floatingWindow.appointment.id,
+      treatments: selectedReviewItems.treatments,
+      nextVisit: selectedReviewItems.nextVisit,
+      customNotes: selectedReviewItems.customNotes,
+      verbalText: generatedReview.verbalText,
+      printedText: generatedReview.printedText,
+      printedAt: formatTime(now),
+      createdAt: formatTime(now)
+    };
+
+    const newHistory = [historyItem, ...reviewHistory].slice(0, 100);
+    localStorage.setItem('reviewHistory', JSON.stringify(newHistory));
+
+    const updatedAppointments = get().appointments.map(apt => {
+      if (apt.id === floatingWindow.appointment?.id) {
+        return { ...apt, lastReview: historyItem };
+      }
+      return apt;
+    });
+
+    set({
+      reviewHistory: newHistory,
+      appointments: updatedAppointments,
+      floatingWindow: {
+        ...get().floatingWindow,
+        appointment: {
+          ...floatingWindow.appointment,
+          lastReview: historyItem
+        }
+      }
+    });
+  },
+
+  setConsultationStage: (appointmentId, stage) => {
+    const stageTab = STAGE_TO_TAB[stage];
+    const isReview = stageTab === 'review';
+    const newActiveTab: SpeechCategory = isReview ? 'post-treatment' : (stageTab as SpeechCategory);
+
+    const updatedAppointments = get().appointments.map(apt => {
+      if (apt.id === appointmentId) {
+        return {
+          ...apt,
+          stage,
+          status: stage === 'done' ? 'completed' as const : (stage === 'waiting' ? 'pending' as const : 'in-progress' as const)
+        };
+      }
+      return apt;
+    });
+
+    const currentAppointment = get().floatingWindow.appointment;
+    const windowUpdate = get().floatingWindow.appointment?.id === appointmentId
+      ? {
+          activeTab: newActiveTab,
+          showReviewPanel: isReview,
+          appointment: currentAppointment ? { ...currentAppointment, stage } : null
+        }
+      : null;
+
+    set({
+      appointments: updatedAppointments,
+      ...(windowUpdate && {
+        floatingWindow: {
+          ...get().floatingWindow,
+          ...windowUpdate
+        }
+      })
     });
   },
 
@@ -194,14 +328,93 @@ export const useAppStore = create<AppState>((set, get) => ({
     return mockRiskSpeeches.filter(r => riskFactors.includes(r.riskType));
   },
 
+  getPatientSummary: (appointment) => {
+    const { patient, treatmentType } = appointment;
+    const riskSpeeches = mockRiskSpeeches.filter(r => patient.riskFactors.includes(r.riskType));
+
+    const riskPoints = riskSpeeches.map(r => ({
+      label: r.riskName,
+      type: r.riskType,
+      suggestion: r.treatmentSuggestion,
+      text: r.suggestionText
+    }));
+
+    let overallSuggestion: TreatmentSuggestion = 'normal';
+    if (riskPoints.some(r => r.suggestion === 'defer')) {
+      overallSuggestion = 'defer';
+    } else if (riskPoints.some(r => r.suggestion === 'caution')) {
+      overallSuggestion = 'caution';
+    }
+
+    let overallSuggestionText = '';
+    if (overallSuggestion === 'defer') {
+      overallSuggestionText = '综合考虑患者风险因素，建议今日暂缓择期治疗，仅处理急症，控制基础疾病后再安排治疗。';
+    } else if (overallSuggestion === 'caution') {
+      overallSuggestionText = '患者存在风险因素，可谨慎进行简单治疗，术中注意监测，避免复杂有创操作。';
+    } else {
+      overallSuggestionText = '患者无明显禁忌，可按计划正常进行治疗。';
+    }
+
+    let combinedRiskAlert: string | undefined;
+    if (riskPoints.length > 0) {
+      const riskLabels = riskPoints.map(r => RISK_FACTOR_LABELS[r.type]).join('、');
+      if (overallSuggestion === 'defer') {
+        combinedRiskAlert = `⚠️ 患者有${riskLabels}，综合评估建议今日暂缓择期治疗，先控制基础疾病。请向患者说明延期原因。`;
+      } else if (overallSuggestion === 'caution') {
+        combinedRiskAlert = `⚠️ 患者有${riskLabels}，请谨慎操作，术前确认相关指标，术中注意监测，必要时咨询内科医生。`;
+      }
+    }
+
+    const templates = get().getSpeechTemplates(treatmentType);
+    const keySpeeches: string[] = [];
+    const priorityCategories: SpeechCategory[] = ['before-exam', 'during-treatment', 'post-treatment'];
+    for (const cat of priorityCategories) {
+      const catTemplates = templates.filter(t => t.category === cat);
+      for (const tpl of catTemplates) {
+        for (const content of tpl.contents) {
+          if (keySpeeches.length < 3) {
+            keySpeeches.push(content);
+          }
+        }
+      }
+      if (keySpeeches.length >= 3) break;
+    }
+
+    const xrayRec = XRAY_RECOMMENDATIONS[treatmentType] || { type: 'optional' as const, text: '根据临床情况决定是否需要拍片检查' };
+
+    let xrayRecommendation: PatientSummary['xrayRecommendation'] = xrayRec.type;
+    let xrayText = xrayRec.text;
+
+    if (patient.riskFactors.includes('pregnancy')) {
+      xrayRecommendation = 'not-recommended';
+      xrayText = '患者处于孕期，除非急症必要，建议避免X光检查，可考虑保守治疗。';
+    }
+
+    return {
+      riskPoints,
+      keySpeeches: keySpeeches.slice(0, 3),
+      xrayRecommendation,
+      xrayText,
+      overallSuggestion,
+      overallSuggestionText,
+      combinedRiskAlert
+    };
+  },
+
   getFilteredAppointments: () => {
-    const { appointments, selectedDate, searchQuery } = get();
+    const { appointments, selectedDate, searchQuery, reviewHistory } = get();
     return appointments.filter(apt => {
       const dateMatch = apt.date === selectedDate;
       const searchMatch = !searchQuery || 
         apt.patient.name.includes(searchQuery) ||
         apt.treatmentType.includes(searchQuery);
       return dateMatch && searchMatch;
+    }).map(apt => {
+      const patientHistory = reviewHistory.find(h => h.patientId === apt.patientId);
+      if (patientHistory && !apt.lastReview) {
+        return { ...apt, lastReview: patientHistory };
+      }
+      return apt;
     }).sort((a, b) => a.time.localeCompare(b.time));
   }
 }));

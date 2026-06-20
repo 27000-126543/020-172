@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
-import { Clock, AlertTriangle, User, Stethoscope } from 'lucide-react';
+import { Clock, AlertTriangle, User, Stethoscope, History, ChevronRight } from 'lucide-react';
 import type { Appointment } from '../types';
-import { RISK_FACTOR_LABELS, APPOINTMENT_STATUS_LABELS } from '../types';
+import { RISK_FACTOR_LABELS, APPOINTMENT_STATUS_LABELS, CONSULTATION_STAGE_LABELS } from '../types';
 import { useAppStore } from '../store';
+import StageProgress from './StageProgress';
 import { cn } from '../lib/utils';
 
 interface PatientCardProps {
@@ -10,8 +11,8 @@ interface PatientCardProps {
 }
 
 export default function PatientCard({ appointment }: PatientCardProps) {
-  const { openFloatingWindow } = useAppStore();
-  const { patient, time, treatmentType, status } = appointment;
+  const { openFloatingWindow, setConsultationStage } = useAppStore();
+  const { patient, time, treatmentType, status, stage, lastReview } = appointment;
 
   const statusColors = {
     pending: 'bg-slate-100 text-slate-600',
@@ -81,6 +82,18 @@ export default function PatientCard({ appointment }: PatientCardProps) {
         </div>
       </div>
 
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <div className="overflow-x-auto pb-1 -mx-1 px-1">
+          <StageProgress
+            currentStage={stage}
+            onStageChange={(s) => {
+              setConsultationStage(appointment.id, s);
+            }}
+            compact
+          />
+        </div>
+      </div>
+
       {patient.riskFactors.length > 0 && (
         <div className="mt-3 pt-3 border-t border-slate-100">
           <div className="flex items-center gap-1.5 mb-2">
@@ -99,6 +112,43 @@ export default function PatientCard({ appointment }: PatientCardProps) {
                 {RISK_FACTOR_LABELS[risk]}
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {lastReview && (
+        <div className="mt-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <History className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-xs font-medium text-blue-600">上次交代记录</span>
+          </div>
+          <div className="p-2 bg-blue-50/50 rounded-lg border border-blue-100">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-slate-500">
+                {lastReview.printedAt}
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {lastReview.treatments.slice(0, 2).map(t => (
+                  <span key={t} className="px-1 py-px bg-white text-blue-700 text-[10px] rounded border border-blue-200">
+                    {t}
+                  </span>
+                ))}
+                {lastReview.treatments.length > 2 && (
+                  <span className="px-1 py-px text-slate-400 text-[10px]">
+                    +{lastReview.treatments.length - 2}
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-600 line-clamp-2">
+              {lastReview.verbalText.split('\n')[0]}
+            </p>
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-[10px] text-green-600">{lastReview.nextVisit}</span>
+              <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
+                点击查看详情 <ChevronRight className="w-3 h-3" />
+              </span>
+            </div>
           </div>
         </div>
       )}

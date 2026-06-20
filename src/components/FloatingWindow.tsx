@@ -6,6 +6,8 @@ import { RISK_FACTOR_LABELS } from '../types';
 import RiskAlert from './RiskAlert';
 import SpeechTabs from './SpeechTabs';
 import ReviewPanel from './ReviewPanel';
+import PatientSummary from './PatientSummary';
+import StageProgress from './StageProgress';
 import { cn } from '../lib/utils';
 
 export default function FloatingWindow() {
@@ -15,7 +17,9 @@ export default function FloatingWindow() {
     toggleMinimize,
     setWindowPosition,
     toggleReviewPanel,
-    getRiskSpeeches
+    getRiskSpeeches,
+    getPatientSummary,
+    setConsultationStage
   } = useAppStore();
 
   const { isOpen, appointment, position, isMinimized, showReviewPanel } = floatingWindow;
@@ -26,9 +30,11 @@ export default function FloatingWindow() {
   const patient = appointment?.patient;
   const riskSpeeches = patient ? getRiskSpeeches(patient.riskFactors) : [];
   const hasRisks = patient && patient.riskFactors.length > 0;
+  const patientSummary = appointment ? getPatientSummary(appointment) : null;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.window-controls')) return;
+    if ((e.target as HTMLElement).closest('.no-drag')) return;
     setIsDragging(true);
     const rect = windowRef.current?.getBoundingClientRect();
     if (rect) {
@@ -88,8 +94,8 @@ export default function FloatingWindow() {
           position: 'fixed',
           left: position.x,
           top: position.y,
-          width: 420,
-          maxHeight: isMinimized ? 'none' : 'calc(100vh - 120px)',
+          width: 440,
+          maxHeight: isMinimized ? 'none' : 'calc(100vh - 80px)',
           zIndex: 9999
         }}
         className={cn(
@@ -105,7 +111,7 @@ export default function FloatingWindow() {
             'bg-gradient-to-r from-slate-50 to-slate-100/50 select-none'
           )}
         >
-          <GripVertical className="w-4 h-4 text-slate-400" />
+          <GripVertical className="w-4 h-4 text-slate-400 flex-shrink-0" />
 
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className={cn(
@@ -133,7 +139,7 @@ export default function FloatingWindow() {
 
           {hasRisks && (
             <div className="flex items-center gap-1 flex-shrink-0">
-              {patient?.riskFactors.map(risk => (
+              {patient?.riskFactors.slice(0, 2).map(risk => (
                 <span
                   key={risk}
                   className={cn(
@@ -144,6 +150,11 @@ export default function FloatingWindow() {
                   {RISK_FACTOR_LABELS[risk]}
                 </span>
               ))}
+              {patient?.riskFactors && patient.riskFactors.length > 2 && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                  +{patient.riskFactors.length - 2}
+                </span>
+              )}
             </div>
           )}
 
@@ -185,17 +196,36 @@ export default function FloatingWindow() {
               exit={{ opacity: 0, height: 0 }}
               className="flex-1 overflow-hidden flex flex-col"
             >
-              <div className="flex-1 overflow-y-auto p-3">
-                {hasRisks && !showReviewPanel && (
+              <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/50 no-drag overflow-x-auto">
+                <StageProgress
+                  currentStage={appointment.stage}
+                  onStageChange={(s) => setConsultationStage(appointment.id, s)}
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-3 no-drag">
+                {!showReviewPanel && patientSummary && (
+                  <PatientSummary summary={patientSummary} />
+                )}
+
+                {hasRisks && !showReviewPanel && patientSummary && (
+                  <RiskAlert
+                    riskSpeeches={riskSpeeches}
+                    combinedAlert={patientSummary.combinedRiskAlert}
+                    overallSuggestion={patientSummary.overallSuggestion}
+                  />
+                )}
+
+                {hasRisks && !showReviewPanel && !patientSummary && (
                   <RiskAlert riskSpeeches={riskSpeeches} />
                 )}
 
                 {showReviewPanel ? (
-                  <div className="h-[420px]">
+                  <div className="h-[440px]">
                     <ReviewPanel />
                   </div>
                 ) : (
-                  <div className="h-[420px]">
+                  <div className="h-[440px]">
                     <SpeechTabs treatmentType={appointment.treatmentType} />
                   </div>
                 )}
